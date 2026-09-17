@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  /* Color: deep polar night, ice-blue as the working accent, aurora/amber/flare as
+     status colors. Not a generic dark+single-accent theme -- the palette maps
+     directly onto the domain (polar night sky, ice, aurora, warning flare). */
+  --bg: #0a1420;
+  --bg-raised: #0e1c2b;
+  --panel: #122334;
+  --panel-elevated: #17293c;
+  --border: #223a4e;
+  --border-soft: #1a2f42;
+
+  --text: #e6eef4;
+  --text-muted: #90a8ba;
+  --text-faint: #5d7688;
+
+  --ice: #6fd4e8;
+  --ice-dim: #3d8fa3;
+  --aurora: #6de6b0;
+  --amber: #f0b94a;
+  --flare: #ff7a5c;
+
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  background-image:
+    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(111, 212, 232, 0.06), transparent),
+    radial-gradient(ellipse 700px 400px at 85% 0%, rgba(109, 230, 176, 0.04), transparent);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-feature-settings: 'tnum' 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(111, 212, 232, 0.25);
+}
+
+/* Accessible focus ring, kept even though most interactions here are clicks */
+:focus-visible {
+  outline: 2px solid var(--ice);
+  outline-offset: 2px;
+}
+
+.app-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 24px 64px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}

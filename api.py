@@ -12,16 +12,20 @@ Then:
     GET /telemetry/latest                -> latest row per station (fleet view)
     GET /telemetry/latest?station=maitri -> latest row for one station
     GET /telemetry/history?station=maitri&hours=24
+    GET /anomalies/latest                -> current anomaly flags, all stations
+    GET /anomalies/latest?station=maitri -> current anomaly flags, one station
 """
 
 from __future__ import annotations
 
 from typing import Optional
 
+import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from db.db import fetch_history, fetch_latest, fetch_stations
+from detector import DEFAULT_MIN_PERIODS, DEFAULT_WINDOW, detect_current
 from station_config import STATIONS
 
 app = FastAPI(title="Digital Twin API", version="0.1.0")
@@ -33,6 +37,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# The detector needs at least (window + min_periods) points of history to
+# say anything -- at a 5-minute tick that's a bit over 4 hours. Fetch a
+# generous margin (6h) so a slightly irregular publish cadence still gives
+# the detector enough to work with.
+ANOMALY_HISTORY_HOURS = 6.0
 
 
 @app.get("/health")
@@ -75,3 +85,29 @@ def telemetry_history(
     if station not in STATIONS:
         raise HTTPException(status_code=404, detail=f"Unknown station '{station}'")
     return fetch_history(station, hours)
+
+
+def _anomalies_for(station_id: str) -> dict:
+    history = fetch_history(station_id, ANOMALY_HISTORY_HOURS)
+    flags = detect_current(pd.DataFrame(history)) if history else []
+    return {
+        "station_id": station_id,
+        "ready": len(history) >= DEFAULT_WINDOW + DEFAULT_MIN_PERIODS,
+        "history_points": len(history),
+        "anomalies": [
+            {"signal": f.signal, "label": f.label, "value": f.value, "z_score": f.z_score, "severity": f.severity}
+            for f in flags
+        ],
+    }
+
+
+@app.get("/anomalies/latest")
+def anomalies_latest(station: Optional[str] = Query(default=None)):
+    """Current anomaly flags -- for one station, or all configured stations
+    if `station` is omitted. `ready: false` means there isn't enough history
+    yet for the detector to say anything (needs ~4h of data)."""
+    if station:
+        if station not in STATIONS:
+            raise HTTPException(status_code=404, detail=f"Unknown station '{station}'")
+        return _anomalies_for(station)
+    return [_anomalies_for(key) for key in STATIONS]

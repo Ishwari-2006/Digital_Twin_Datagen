@@ -1,0 +1,65 @@
+.anomaly-banner {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.anomaly-banner--pending {
+  color: var(--text-faint);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-soft);
+  font-size: 12.5px;
+}
+
+.anomaly-banner--warn {
+  color: var(--amber);
+  background: rgba(240, 185, 74, 0.08);
+  border: 1px solid rgba(240, 185, 74, 0.28);
+}
+
+.anomaly-banner--critical {
+  color: var(--flare);
+  background: rgba(255, 122, 92, 0.1);
+  border: 1px solid rgba(255, 122, 92, 0.3);
+}
+
+.anomaly-banner--full {
+  background: rgba(255, 122, 92, 0.06);
+  border: 1px solid rgba(255, 122, 92, 0.25);
+}
+
+.anomaly-banner__title {
+  color: var(--flare);
+  font-weight: 600;
+  font-size: 12.5px;
+  margin-bottom: 8px;
+}
+
+.anomaly-banner__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  color: var(--text);
+}
+
+.anomaly-banner__row--critical .anomaly-banner__dot { background: var(--flare); }
+.anomaly-banner__row--warn .anomaly-banner__dot { background: var(--amber); }
+
+.anomaly-banner__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.anomaly-banner__label {
+  font-weight: 500;
+  flex: 1;
+}
+
+.anomaly-banner__detail {
+  color: var(--text-muted);
+  font-size: 12px;
+}

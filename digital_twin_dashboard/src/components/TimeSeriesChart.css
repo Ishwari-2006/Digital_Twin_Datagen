@@ -1,0 +1,38 @@
+.ts-tooltip {
+  background: #0e1c2b;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+
+.ts-tooltip__time {
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+
+.ts-tooltip__row {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ts-tooltip__row strong {
+  color: var(--text);
+}
+
+.ts-tooltip__swatch {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.ts-empty {
+  color: var(--text-faint);
+  font-size: 13px;
+  padding: 40px 0;
+  text-align: center;
+}

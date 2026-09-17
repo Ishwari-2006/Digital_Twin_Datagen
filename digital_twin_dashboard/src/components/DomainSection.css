@@ -1,0 +1,29 @@
+.domain-section__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.domain-section__charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.domain-section__chart {
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 14px 12px 6px;
+  background: var(--bg-raised);
+}
+
+.domain-section__chart-title {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 4px 4px;
+}
+
+@media (max-width: 620px) {
+  .domain-section__tiles { grid-template-columns: repeat(2, 1fr); }
+}

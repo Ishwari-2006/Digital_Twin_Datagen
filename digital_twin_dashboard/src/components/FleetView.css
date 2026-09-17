@@ -1,0 +1,26 @@
+.fleet-view {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.fleet-error {
+  border: 1px solid rgba(255, 122, 92, 0.3);
+  background: rgba(255, 122, 92, 0.06);
+  border-radius: 8px;
+  padding: 20px 22px;
+  color: var(--flare);
+  font-size: 14px;
+}
+
+.fleet-error__detail {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  margin-top: 6px;
+}
+
+.fleet-error__hint {
+  color: var(--text-faint);
+  font-size: 12.5px;
+  margin-top: 10px;
+}
