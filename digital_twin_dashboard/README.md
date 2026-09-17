@@ -58,12 +58,33 @@ src/
     ├── DomainSection.jsx      # tiles + charts layout, reused per domain
     ├── MetricTile.jsx         # single current-value tile
     ├── TimeSeriesChart.jsx    # themed Recharts line chart wrapper
-    └── StatusPill.jsx         # comms status + staleness indicator
+    ├── StatusPill.jsx         # comms status + staleness indicator
+    ├── AnomalyBanner.jsx      # detector output banner (fleet + station views)
+    └── StationTwin.jsx        # 2D station schematic, zone health from the detector
 ```
 
-## Next step (Section 3.4, hrs 24–30)
+## Anomaly detector — done (Section 3.4)
 
-The anomaly detector. Once it exists, the natural hook-in point is the
-`active_anomalies` banner already shown on both the fleet cards and the
-station detail header — swap the generator's ground-truth string for the
-detector's live output and the UI needs no other changes.
+`AnomalyBanner` shows the detector's real live output (`/anomalies/latest`),
+not the generator's ground truth — the ground-truth line is kept alongside
+it (labeled "ground truth") purely for demo/debugging transparency, so you
+can show both agreeing.
+
+## 2D station twin — done (Section 3.1 Model layer)
+
+New default tab on each station's detail view: a schematic with six zones
+(Power Plant, Fuel Depot, Battery Bank, Living Quarters, Comms & Antenna,
+Weather Mast), color-coded by live health. Power/Fuel/Battery/Weather are
+driven by the actual z-score detector; Comms and Living Quarters use direct
+status fields (`comms_status`, `heater_status`) since those are categorical,
+not something a z-score applies to — the inspect panel is upfront about
+which is which. Click a zone to see its current values and, if flagged, the
+detector's reasoning (which signal, z-score). No new API calls — it reuses
+the same `latest`/`anomalies` polling `StationDetail` already does.
+
+## Next step (Section 3.5, hrs 30–34)
+
+Demo-trigger polish and an alerting UI pass — the pieces (StatusPill,
+AnomalyBanner, StationTwin's pulse animation) already exist; this stage is
+about rehearsing the actual "simulate event" / "simulate blackout" demo
+flow end-to-end, not new features.
