@@ -6,7 +6,9 @@
   padding: 0;
   margin-bottom: 18px;
 }
-.back-link:hover { color: var(--ice); }
+.back-link:hover {
+  color: var(--ice);
+}
 
 .station-detail__header {
   display: flex;
@@ -37,7 +39,7 @@
   margin-top: 14px;
   padding: 10px 14px;
   border-radius: 6px;
-  background: rgba(157, 25, 32, 0.70);
+  background: rgba(157, 25, 32, 0.7);
   border: 1px solid rgba(255, 122, 92, 0.3);
   color: #fff4f4;
   font-size: 16px;
@@ -65,24 +67,27 @@
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  color: #d8edf6;
+  color: #fff;
   font-size: 13px;
   padding: 11px 2px;
   margin-right: 27px;
 }
 
 .station-detail__tab.is-active {
-  color: var(--text);
+  color: #000;
   border-bottom-color: var(--ice);
 }
 
 .station-detail__tab:hover:not(.is-active) {
-  color: var(--text);
+  color: #fff;
 }
 
-.detail-loading, .detail-error {
+.detail-loading,
+.detail-error {
   color: var(--text-muted);
   font-size: 14px;
 }
 
-.detail-error { color: var(--flare); }
+.detail-error {
+  color: var(--flare);
+}

@@ -62,7 +62,7 @@
 }
 
 .control-panel__current {
-  color: var(--text-faint);
+  color: var(--text);
   font-size: 13px;
 }
 
@@ -73,7 +73,7 @@
 }
 .control-panel__heater input {
   width: 68px;
-  background: rgba(255,255,255,0.45);
+  background: rgba(255, 255, 255, 0.45);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 0;
@@ -85,14 +85,14 @@
 .control-panel__history h4 {
   margin: 0 0 6px 0;
   font-size: 14px;
-  color: var(--text-muted);
+  color: var(--text);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .control-panel__empty {
   font-size: 15px;
-  color: var(--text-faint);
+  color: var(--text);
 }
 
 .control-panel__history ul {
@@ -110,7 +110,7 @@
   font-size: 15px;
   padding: 8px 0;
   border-bottom: 1px solid var(--border-soft);
-  color: var(--text-muted);
+  color: var(--text);
 }
 
 .control-panel__history-command {
@@ -121,6 +121,12 @@
 .control-panel__history-status {
   text-transform: capitalize;
 }
-.control-panel__history-row--applied .control-panel__history-status { color: var(--aurora); }
-.control-panel__history-row--pending .control-panel__history-status { color: var(--amber); }
-.control-panel__history-row--failed .control-panel__history-status { color: var(--flare); }
+.control-panel__history-row--applied .control-panel__history-status {
+  color: #228b22;
+}
+.control-panel__history-row--pending .control-panel__history-status {
+  color: var(--amber);
+}
+.control-panel__history-row--failed .control-panel__history-status {
+  color: var(--flare);
+}

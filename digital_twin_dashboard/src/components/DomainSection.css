@@ -20,10 +20,12 @@
 
 .domain-section__chart-title {
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--text);
   margin: 0 4px 4px;
 }
 
 @media (max-width: 620px) {
-  .domain-section__tiles { grid-template-columns: repeat(2, 1fr); }
+  .domain-section__tiles {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
