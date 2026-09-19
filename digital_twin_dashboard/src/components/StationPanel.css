@@ -1,58 +1,95 @@
 .station-panel {
   text-align: left;
-  background: var(--panel);
+  background-color: rgba(10, 38, 63, 0.82);
+  background-position: center;
+  background-size: cover;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 20px 22px 18px;
+  border-radius: 0;
+  padding: 28px 30px 24px;
   width: 100%;
   color: var(--text);
   position: relative;
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
+
+.station-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(135deg, rgba(11, 45, 73, 0.86), rgba(19, 65, 96, 0.7));
+}
+
+.station-panel--maitri { background-image: url('/maitri.jpeg'); }
+.station-panel--bharati { background-image: url('/bharati.jpeg'); }
+.station-panel > * { position: relative; z-index: 1; }
 
 .station-panel:hover {
   border-color: var(--ice-dim);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  background-color: rgba(15, 53, 82, 0.88);
 }
 
 .station-panel__top {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  height: 58px;
+  flex: 0 0 58px;
+}
+
+.station-panel__top > div:first-child {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.station-panel__top > .status-pill {
+  position: absolute;
+  top: 0;
+  right: 0;
 }
 
 .station-panel__name {
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 35px;
   font-weight: 600;
+  line-height: 1.1;
   letter-spacing: -0.01em;
+  color: #f4fbff;
+  text-shadow: 0 2px 14px rgba(0, 12, 24, 0.65);
 }
 
 .station-panel__location {
-  color: var(--text-muted);
-  font-size: 12.5px;
-  margin-top: 2px;
+  color: #b9d9e9;
+  font-size: 16px;
+  margin-top: 7px;
 }
 
 .station-panel__waiting {
-  color: var(--text-faint);
-  font-size: 13px;
+  color: #b9d9e9;
+  font-size: 15px;
   margin-top: 18px;
 }
 
 .station-panel__temp {
   font-family: var(--font-display);
-  font-size: 44px;
+  font-size: 72px;
   font-weight: 500;
-  margin-top: 14px;
+  margin-top: 42px;
+  margin: 0;
   line-height: 1;
-  color: var(--ice);
+  color: #f4fbff;
+  text-shadow: 0 2px 14px rgba(0, 12, 24, 0.65);
 }
 
 .station-panel__temp-unit {
-  font-size: 20px;
-  color: var(--text-muted);
+  font-size: 24px;
+  color: #b9d9e9;
   margin-left: 3px;
 }
 
@@ -60,20 +97,23 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 10px;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border-soft);
+  margin-top: 28px;
+  padding: 23px 0 18px;
+  border-top: 1px solid rgba(174, 214, 234, 0.42);
+  border-bottom: 1px solid rgba(174, 214, 234, 0.42);
 }
 
 .station-panel__grid-label {
-  font-size: 11.5px;
-  color: var(--text-faint);
+  font-size: 15px;
+  color: #b9d9e9;
   margin-bottom: 3px;
 }
 
 .station-panel__grid-value {
-  font-size: 15px;
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 21px;
+  font-weight: 500;
+  color: #f4fbff;
 }
 
 .tone-good { color: var(--aurora); }
@@ -82,17 +122,39 @@
 
 .station-panel__anomaly {
   margin-top: 14px;
-  font-size: 12.5px;
-  color: var(--flare);
+  font-size: 16px;
+  color: #ffd1c8;
   text-transform: capitalize;
 }
 
 .station-panel__cta {
-  margin-top: 16px;
-  font-size: 12.5px;
-  color: var(--ice-dim);
+  margin-top: 17px;
+  font-size: 16px;
+  color: #d8edf6;
+  text-align: right;
 }
 
 .station-panel:hover .station-panel__cta {
-  color: var(--ice);
+  color: #ffffff;
+}
+
+.station-panel .health-score {
+  background: rgba(4, 27, 48, 0.58);
+  border-color: rgba(174, 214, 234, 0.42);
+  margin-bottom: 10px;
+}
+.station-panel .health-score__label,
+.station-panel .health-score__main span,
+.station-panel .health-score__state {
+  color: #b9d9e9;
+  font-size: 14px;
+}
+.station-panel .health-score__value { font-size: 34px; }
+.station-panel .status-pill {
+  background: rgba(4, 27, 48, 0.58);
+  border-color: rgba(174, 214, 234, 0.55);
+}
+.station-panel .anomaly-banner {
+  background: #102f4a;
+  color: #ffe0d9;
 }

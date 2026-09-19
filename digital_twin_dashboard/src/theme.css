@@ -1,28 +1,29 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
   /* Color: deep polar night, ice-blue as the working accent, aurora/amber/flare as
      status colors. Not a generic dark+single-accent theme -- the palette maps
      directly onto the domain (polar night sky, ice, aurora, warning flare). */
-  --bg: #0a1420;
-  --bg-raised: #0e1c2b;
-  --panel: #122334;
-  --panel-elevated: #17293c;
-  --border: #223a4e;
-  --border-soft: #1a2f42;
+  --bg: #dcecf5;
+  --bg-raised: #eaf4f9;
+  --panel: #f2f8fb;
+  --panel-elevated: #d4e8f3;
+  --border: #9fc3d9;
+  --border-soft: #bed8e7;
 
-  --text: #e6eef4;
-  --text-muted: #90a8ba;
-  --text-faint: #5d7688;
+  --text: #08284c;
+  --text-muted: #477fa8;
+  --text-faint: #6f9bb8;
 
-  --ice: #6fd4e8;
-  --ice-dim: #3d8fa3;
-  --aurora: #6de6b0;
-  --amber: #f0b94a;
-  --flare: #ff7a5c;
+  --ice: #1f5d91;
+  --ice-dim: #4b8db7;
+  --aurora: #54c69a;
+  --amber: #d99425;
+  --flare: #ed6e5a;
 
   --font-display: 'Fraunces', Georgia, serif;
-  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'DM Mono', monospace;
 }
 
 * { box-sizing: border-box; }
@@ -33,10 +34,13 @@ html, body, #root {
 
 body {
   margin: 0;
-  background: var(--bg);
+  background-color: var(--bg);
   background-image:
-    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(111, 212, 232, 0.06), transparent),
-    radial-gradient(ellipse 700px 400px at 85% 0%, rgba(109, 230, 176, 0.04), transparent);
+    linear-gradient(rgba(12, 48, 78, 0.23), rgba(12, 48, 78, 0.23)),
+    url('/antarctic-background.jpeg');
+  background-position: center;
+  background-size: cover;
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-body);
   font-feature-settings: 'tnum' 1;
@@ -61,13 +65,37 @@ button {
 }
 
 .app-shell {
-  max-width: 1180px;
+  width: 100%;
+  max-width: none;
   margin: 0 auto;
-  padding: 28px 24px 64px;
+  padding: 0 3.7vw 64px;
+}
+
+.app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(11, 45, 73, 0.02), rgba(11, 45, 73, 0.06));
 }
 
 .num {
   font-variant-numeric: tabular-nums;
+}
+
+.mono, .top-bar__eyebrow, .fleet-view__eyebrow, .fleet-view__summary-label,
+.station-panel__location, .station-panel__grid-label, .health-score__label {
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+}
+
+.fleet-view__eyebrow,
+.fleet-view__summary-label,
+.station-panel__location,
+.station-panel__grid-label,
+.health-score__label {
+  font-size: 12px;
 }
 
 @media (prefers-reduced-motion: reduce) {

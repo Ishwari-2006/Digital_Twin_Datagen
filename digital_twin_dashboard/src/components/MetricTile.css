@@ -1,8 +1,8 @@
 .metric-tile {
   padding: 14px 16px;
   border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  background: var(--bg-raised);
+  border-radius: 0;
+  background: rgba(242, 248, 251, 0.72);
   min-width: 0;
 }
 
@@ -13,7 +13,8 @@
 }
 
 .metric-tile__value {
-  font-size: 22px;
+  font-family: var(--font-mono);
+  font-size: 24px;
   font-weight: 600;
   color: var(--text);
   line-height: 1.1;

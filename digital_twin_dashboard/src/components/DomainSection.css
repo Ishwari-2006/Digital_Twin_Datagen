@@ -13,9 +13,9 @@
 
 .domain-section__chart {
   border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  padding: 14px 12px 6px;
-  background: var(--bg-raised);
+  border-radius: 0;
+  padding: 16px 14px 8px;
+  background: rgba(242, 248, 251, 0.7);
 }
 
 .domain-section__chart-title {

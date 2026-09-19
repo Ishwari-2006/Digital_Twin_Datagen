@@ -14,7 +14,7 @@ export default function StationPanel({ station, telemetry, anomalies, health, on
   const hasData = Boolean(telemetry)
 
   return (
-    <button className="station-panel" onClick={() => onOpen(station)}>
+    <button className={`station-panel station-panel--${station.station_id}`} onClick={() => onOpen(station)}>
       <div className="station-panel__top">
         <div>
           <div className="station-panel__name">{station.display_name}</div>

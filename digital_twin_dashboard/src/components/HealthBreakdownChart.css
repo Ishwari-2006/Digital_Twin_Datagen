@@ -2,8 +2,8 @@
   margin: 18px 0 24px;
   padding: 16px;
   border: 1px solid var(--border-soft);
-  border-radius: 8px;
-  background: var(--bg-raised);
+  border-radius: 0;
+  background: rgba(242, 248, 251, 0.72);
 }
 .health-breakdown__heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
 .health-breakdown__heading h2 { margin: 0; font-family: var(--font-display); font-size: 17px; font-weight: 500; }

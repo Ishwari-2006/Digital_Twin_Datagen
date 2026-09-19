@@ -1,7 +1,7 @@
 .control-panel {
-  background: var(--panel);
+  background: rgba(242, 248, 251, 0.72);
   border: 1px solid var(--border-soft);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 16px 18px;
   margin: 18px 0;
 }
@@ -16,13 +16,13 @@
 .control-panel__title {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 16px;
+  font-size: 20px;
   margin: 0;
   color: var(--text);
 }
 
 .control-panel__toast {
-  font-size: 12px;
+  font-size: 14px;
   padding: 3px 10px;
   border-radius: 5px;
 }
@@ -45,12 +45,12 @@
 }
 
 .control-panel__button {
-  background: var(--panel-elevated);
+  background: #c7deed;
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 14px;
-  font-size: 13px;
+  border-radius: 0;
+  padding: 10px 16px;
+  font-size: 15px;
 }
 .control-panel__button:hover:not(:disabled) {
   border-color: var(--ice);
@@ -63,7 +63,7 @@
 
 .control-panel__current {
   color: var(--text-faint);
-  font-size: 11.5px;
+  font-size: 13px;
 }
 
 .control-panel__heater {
@@ -73,25 +73,25 @@
 }
 .control-panel__heater input {
   width: 68px;
-  background: var(--bg-raised);
+  background: rgba(255,255,255,0.45);
   border: 1px solid var(--border);
   color: var(--text);
-  border-radius: 6px;
-  padding: 7px 8px;
-  font-size: 13px;
+  border-radius: 0;
+  padding: 9px 10px;
+  font-size: 15px;
   font-variant-numeric: tabular-nums;
 }
 
 .control-panel__history h4 {
   margin: 0 0 6px 0;
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .control-panel__empty {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--text-faint);
 }
 
@@ -107,8 +107,8 @@
   display: grid;
   grid-template-columns: 90px 1fr 100px 80px;
   gap: 8px;
-  font-size: 12.5px;
-  padding: 5px 0;
+  font-size: 15px;
+  padding: 8px 0;
   border-bottom: 1px solid var(--border-soft);
   color: var(--text-muted);
 }

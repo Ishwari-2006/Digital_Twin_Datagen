@@ -1,7 +1,7 @@
 .back-link {
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: #e4f5fc;
   font-size: 13px;
   padding: 0;
   margin-bottom: 18px;
@@ -13,31 +13,34 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 6px;
+  margin-bottom: 18px;
 }
 
 .station-detail__name {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 32px;
+  font-size: clamp(36px, 5vw, 58px);
   margin: 0;
   letter-spacing: -0.01em;
+  color: #f4fbff;
+  text-shadow: 0 2px 18px rgba(3, 24, 44, 0.65);
 }
 
 .station-detail__location {
-  color: var(--text-muted);
-  font-size: 13.5px;
-  margin-top: 2px;
+  color: #d8edf6;
+  text-shadow: 0 1px 10px rgba(3, 24, 44, 0.55);
+  font-size: 13px;
+  margin-top: 8px;
 }
 
 .station-detail__anomaly-banner {
   margin-top: 14px;
   padding: 10px 14px;
   border-radius: 6px;
-  background: rgba(255, 122, 92, 0.1);
+  background: rgba(157, 25, 32, 0.70);
   border: 1px solid rgba(255, 122, 92, 0.3);
-  color: var(--flare);
-  font-size: 13.5px;
+  color: #fff4f4;
+  font-size: 16px;
   text-transform: capitalize;
 }
 
@@ -45,16 +48,16 @@
   margin-top: 14px;
   padding: 10px 14px;
   border-radius: 6px;
-  background: rgba(111, 212, 232, 0.08);
+  background: #173b59;
   border: 1px solid rgba(111, 212, 232, 0.25);
-  color: var(--ice);
-  font-size: 13.5px;
+  color: #d9edf7;
+  font-size: 15px;
 }
 
 .station-detail__tabs {
   display: flex;
   gap: 4px;
-  margin: 24px 0 20px;
+  margin: 30px 0 20px;
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -62,10 +65,10 @@
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  color: var(--text-muted);
-  font-size: 13.5px;
-  padding: 9px 4px;
-  margin-right: 20px;
+  color: #d8edf6;
+  font-size: 13px;
+  padding: 11px 2px;
+  margin-right: 27px;
 }
 
 .station-detail__tab.is-active {

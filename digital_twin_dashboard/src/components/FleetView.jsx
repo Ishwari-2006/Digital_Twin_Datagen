@@ -53,6 +53,11 @@ export default function FleetView({ onOpen }) {
     return () => clearInterval(t);
   }, [refresh]);
 
+  const healthRows = Object.values(healthByStation);
+  const healthy = healthRows.filter((row) => row.state === 'normal').length;
+  const warnings = healthRows.filter((row) => row.state === 'warning').length;
+  const blackouts = healthRows.filter((row) => row.state === 'comms_blackout').length;
+
   if (error) {
     return (
       <div className="fleet-error">
@@ -68,6 +73,21 @@ export default function FleetView({ onOpen }) {
 
   return (
     <div className="fleet-view">
+      <div className="fleet-view__intro">
+        <div>
+          <div className="fleet-view__eyebrow">Operations / Fleet overview</div>
+          <h1>Antarctic stations</h1>
+          <p>Live telemetry and operational readiness across the polar network.</p>
+        </div>
+        <div className="fleet-view__live"><i /> <strong>Live simulation</strong><span>Telemetry refreshes every 5 seconds</span></div>
+      </div>
+      <div className="fleet-view__summary">
+        <div><span className="fleet-view__summary-label">Fleet status</span><strong><i /> {stations.length} / 2 online</strong></div>
+        <div><span className="fleet-view__summary-label">Healthy</span><strong>{String(healthy).padStart(2, '0')}</strong></div>
+        <div><span className="fleet-view__summary-label">Warnings</span><strong className="summary-warn">{String(warnings).padStart(2, '0')}</strong></div>
+        <div><span className="fleet-view__summary-label">Blackouts</span><strong className="summary-critical">{String(blackouts).padStart(2, '0')}</strong></div>
+        <div className="fleet-view__updated">↻ Updated 5s ago</div>
+      </div>
       {stations.map((s) => (
         <StationPanel
           key={s.station_id}

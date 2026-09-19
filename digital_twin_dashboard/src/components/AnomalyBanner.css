@@ -1,38 +1,39 @@
 .anomaly-banner {
   margin-top: 14px;
   padding: 10px 14px;
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: 0;
+  font-size: 14px;
 }
 
 .anomaly-banner--pending {
-  color: var(--text-faint);
-  background: var(--bg-raised);
+  color: #d9edf7;
+  background: #173b59;
   border: 1px solid var(--border-soft);
-  font-size: 12.5px;
+  font-size: 14px;
 }
 
 .anomaly-banner--warn {
-  color: var(--amber);
-  background: rgba(240, 185, 74, 0.08);
+  color: #ffe2a8;
+  background: #604719;
   border: 1px solid rgba(240, 185, 74, 0.28);
 }
 
 .anomaly-banner--critical {
-  color: var(--flare);
-  background: rgba(255, 122, 92, 0.1);
+  color: #fff4f4;
+  background: rgba(157, 25, 32, 0.70);
   border: 1px solid rgba(255, 122, 92, 0.3);
 }
 
 .anomaly-banner--full {
-  background: rgba(255, 122, 92, 0.06);
+  color: #fff4f4;
+  background: rgba(157, 25, 32, 0.70);
   border: 1px solid rgba(255, 122, 92, 0.25);
 }
 
 .anomaly-banner__title {
-  color: var(--flare);
+  color: #fff4f4;
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: 16px;
   margin-bottom: 8px;
 }
 
@@ -41,7 +42,8 @@
   align-items: center;
   gap: 8px;
   padding: 4px 0;
-  color: var(--text);
+  font-size: 15px;
+  color: #fff7f3;
 }
 
 .anomaly-banner__row--critical .anomaly-banner__dot { background: var(--flare); }
@@ -60,8 +62,8 @@
 }
 
 .anomaly-banner__detail {
-  color: var(--text-muted);
-  font-size: 12px;
+  color: #ffd8d8;
+  font-size: 14px;
 }
 
 /* Remote Management Action Layer -- acknowledge button on ground-truth rows */
@@ -70,12 +72,12 @@
 }
 
 .anomaly-banner__ack-button {
-  background: none;
+  background: #321c22;
   border: 1px solid rgba(240, 185, 74, 0.4);
   color: var(--amber);
   border-radius: 5px;
   padding: 3px 10px;
-  font-size: 12px;
+  font-size: 13px;
 }
 .anomaly-banner__ack-button:hover:not(:disabled) {
   background: rgba(240, 185, 74, 0.12);
@@ -86,7 +88,7 @@
 }
 
 .anomaly-banner__ack-error {
-  color: var(--flare);
-  font-size: 12px;
+  color: #fff4f4;
+  font-size: 14px;
   margin-top: 6px;
 }
