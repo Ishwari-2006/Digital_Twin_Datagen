@@ -27,10 +27,43 @@ from datetime import datetime, timedelta
 
 import paho.mqtt.client as mqtt
 
+from db.db import update_command_status
 from generator import ANOMALY_TYPES, StationSimulator
 from station_config import STATIONS
 
 TOPIC_TEMPLATE = "station/{station_id}/telemetry"
+COMMAND_TOPIC_FILTER = "station/+/command"
+
+
+def on_command_message(client, userdata, msg):
+    """
+    Remote Management Action Layer: the publisher owns the live
+    StationSimulator instances, so it's the process that actually applies
+    operator commands. `userdata` is the {station_id: StationSimulator} dict
+    set via client.user_data_set() in main().
+    """
+    sims = userdata
+    try:
+        station_id = msg.topic.split("/")[1]
+        cmd = json.loads(msg.payload.decode("utf-8"))
+    except (IndexError, json.JSONDecodeError) as exc:
+        print(f"# BAD COMMAND on {msg.topic}: {exc}", file=sys.stderr)
+        return
+
+    sim = sims.get(station_id)
+    if sim is None:
+        print(f"# command for unknown station '{station_id}'", file=sys.stderr)
+        return
+
+    result = sim.apply_command(cmd)
+    print(f"# COMMAND {station_id} <- {cmd.get('command')}: {result}", file=sys.stderr)
+
+    command_id = cmd.get("command_id")
+    if command_id is not None:
+        try:
+            update_command_status(command_id, "applied" if result.get("applied") else "failed")
+        except Exception as exc:
+            print(f"# failed to update audit row {command_id}: {exc}", file=sys.stderr)
 
 
 def parse_trigger(spec: str) -> tuple[float, str, str]:
@@ -63,6 +96,13 @@ def main() -> None:
     sim_time = datetime.fromisoformat(args.start) if args.start else datetime.now()
     sims = {key: StationSimulator(key, rng_seed=args.seed) for key in STATIONS}
     was_blacked_out = {key: False for key in STATIONS}
+
+    # Remote Management Action Layer: listen for operator commands alongside
+    # the publish loop. client.loop_start() (above) already runs a background
+    # network thread, so subscribing here is enough -- no extra polling needed.
+    client.user_data_set(sims)
+    client.message_callback_add(COMMAND_TOPIC_FILTER, on_command_message)
+    client.subscribe(COMMAND_TOPIC_FILTER, qos=1)
 
     pending_triggers = sorted(args.demo_trigger)
     t0 = time.monotonic()

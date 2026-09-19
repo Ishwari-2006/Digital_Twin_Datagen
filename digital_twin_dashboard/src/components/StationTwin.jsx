@@ -14,6 +14,13 @@ const ZONES = [
     x: 22,
     y: 26,
     signals: ["power_draw_kw"],
+    // Remote Management Action Layer: generator_load_pct and active_generator
+    // are direct telemetry fields (not something the z-score detector scores),
+    // so switch_generator's effect needs its own threshold check here --
+    // same thresholds StationDetail.jsx already uses for the Energy tab tile.
+    loadField: "generator_load_pct",
+    loadWarnAt: 85,
+    loadCriticalAt: 95,
   },
   {
     id: "fuel",
@@ -68,21 +75,48 @@ const COLOR = {
   critical: "var(--flare)",
 };
 
+// Simulator events are direct, operational facts. They must colour their
+// affected zone even when the statistical detector has not raised a signal.
+const GROUND_TRUTH_ZONE_SEVERITY = {
+  fuel_leak: { zoneId: "fuel", severity: "critical" },
+  power_spike: { zoneId: "power", severity: "critical" },
+  heater_failure: { zoneId: "quarters", severity: "critical" },
+  comms_blackout: { zoneId: "comms", severity: "critical" },
+  storm: { zoneId: "weather", severity: "warn" },
+};
+
 function zoneSeverity(zone, latest, anomalyMap) {
+  const activeKinds = (latest?.active_anomalies || "none")
+    .split(",")
+    .filter((kind) => kind && kind !== "none");
+  const directSeverity = activeKinds.reduce((worst, kind) => {
+    const event = GROUND_TRUTH_ZONE_SEVERITY[kind];
+    if (!event || event.zoneId !== zone.id) return worst;
+    return event.severity === "critical" ? "critical" : "warn";
+  }, "normal");
+
+  if (directSeverity === "critical") return "critical";
   if (zone.statusField === "comms_status") {
     if (latest?.comms_status === "blackout") return "critical";
     if (latest?.comms_status === "degraded") return "warn";
-    return "normal";
+    return directSeverity;
   }
   if (zone.statusField === "heater_status") {
-    return latest?.heater_status === "fault" ? "critical" : "normal";
+    return latest?.heater_status === "fault" ? "critical" : directSeverity;
   }
-  let worst = "normal";
+  let worst = directSeverity;
   for (const sig of zone.signals) {
     const flag = anomalyMap[sig];
     if (!flag) continue;
     if (flag.severity === "critical") return "critical";
     if (flag.severity === "warn") worst = "warn";
+  }
+  if (zone.loadField) {
+    const load = latest?.[zone.loadField];
+    if (typeof load === "number") {
+      if (load >= zone.loadCriticalAt) return "critical";
+      if (load >= zone.loadWarnAt && worst === "normal") worst = "warn";
+    }
   }
   return worst;
 }
@@ -93,6 +127,8 @@ const UNITS = {
   ambient_temp_c: "°C",
   wind_speed_ms: " m/s",
   battery_soc_pct: "%",
+  generator_load_pct: "%",
+  heater_setpoint_c: "°C",
 };
 
 function formatValue(sig, value) {
@@ -116,12 +152,20 @@ function zoneMetrics(zone, latest) {
     return [
       { label: "Heater", value: latest?.heater_status },
       { label: "HVAC", value: latest?.hvac_status },
+      { label: "Heater setpoint", value: formatValue("heater_setpoint_c", latest?.heater_setpoint_c) },
     ];
   }
-  return zone.signals.map((sig) => ({
+  const base = zone.signals.map((sig) => ({
     label: SIGNAL_LABELS[sig] || sig,
     value: formatValue(sig, latest?.[sig]),
   }));
+  if (zone.loadField) {
+    base.push(
+      { label: "Generator load", value: formatValue(zone.loadField, latest?.[zone.loadField]) },
+      { label: "Active generator", value: latest?.active_generator },
+    );
+  }
+  return base;
 }
 
 function findZonePoint(id) {

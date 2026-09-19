@@ -9,6 +9,7 @@ Configure via environment variables (see .env.example):
 
 from __future__ import annotations
 
+import json
 import os
 from contextlib import contextmanager
 from typing import Iterator, Optional
@@ -35,6 +36,8 @@ _COLUMNS = [
     "hvac_status", "heater_status",
     "resupply_window_days_remaining", "resupply_recommendation",
     "active_anomalies", "delivered_live",
+    # Remote Management Action Layer -- surfaced by StationSimulator.apply_command()
+    "active_generator", "heater_setpoint_c", "resupply_requested",
 ]
 
 _INSERT_SQL = f"""
@@ -100,7 +103,7 @@ def fetch_latest(station_id: Optional[str] = None) -> list[dict]:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             if station_id:
                 cur.execute(
-                    "SELECT * FROM telemetry WHERE station_id = %s ORDER BY ts DESC LIMIT 1",
+                    "SELECT * FROM telemetry WHERE station_id = %s ORDER BY received_at DESC LIMIT 1",
                     (station_id,),
                 )
             else:
@@ -108,7 +111,7 @@ def fetch_latest(station_id: Optional[str] = None) -> list[dict]:
                     """
                     SELECT DISTINCT ON (station_id) *
                     FROM telemetry
-                    ORDER BY station_id, ts DESC
+                    ORDER BY station_id, received_at DESC
                     """
                 )
             return [dict(r) for r in cur.fetchall()]
@@ -134,3 +137,49 @@ def fetch_stations() -> list[str]:
         with conn.cursor() as cur:
             cur.execute("SELECT DISTINCT station_id FROM telemetry ORDER BY station_id")
             return [r[0] for r in cur.fetchall()]
+
+
+# --------------------------------------------------------------------------- #
+# Remote Management Action Layer -- operator command audit log
+# --------------------------------------------------------------------------- #
+
+def insert_command(station_id: str, command_type: str, payload: dict, issued_by: str) -> dict:
+    """Insert one operator command as a 'pending' audit row (api.py calls this
+    right before publishing the command to MQTT). Returns the new row."""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO commands (station_id, command_type, payload, issued_by)
+                VALUES (%s, %s, %s::jsonb, %s)
+                RETURNING id, station_id, command_type, payload, issued_by, ts, status
+                """,
+                (station_id, command_type, json.dumps(payload), issued_by),
+            )
+            return dict(cur.fetchone())
+
+
+def update_command_status(command_id: int, status: str) -> None:
+    """Flip a command's audit status once the simulator has actually applied
+    it (mqtt_publisher.py's command listener calls this after apply_command())."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE commands SET status = %s WHERE id = %s", (status, command_id))
+
+
+def fetch_commands(station_id: str, limit: int = 50) -> list[dict]:
+    """Most recent commands for a station, newest first -- the dashboard's
+    'Recent Actions' audit-log feed."""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id, station_id, command_type, payload, issued_by, ts, status
+                FROM commands
+                WHERE station_id = %s
+                ORDER BY ts DESC
+                LIMIT %s
+                """,
+                (station_id, limit),
+            )
+            return [dict(r) for r in cur.fetchall()]

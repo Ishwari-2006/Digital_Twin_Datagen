@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
-import { getLatest, getHistory, getAnomalies } from "../api";
+import { getLatest, getHistory, getAnomalies, getHealthBreakdown, getHealthCurrent } from "../api";
 import StatusPill from "./StatusPill";
 import DomainSection from "./DomainSection";
 import AnomalyBanner from "./AnomalyBanner";
 import StationTwin from "./StationTwin";
+import ControlPanel from "./ControlPanel";
+import HealthScore from "./HealthScore";
+import HealthBreakdownChart from "./HealthBreakdownChart";
 import "./StationDetail.css";
 
 const DOMAINS = [
@@ -27,6 +30,8 @@ export default function StationDetail({ station, onBack }) {
   const [latest, setLatest] = useState(null);
   const [history, setHistory] = useState([]);
   const [anomalies, setAnomalies] = useState(null);
+  const [health, setHealth] = useState(null);
+  const [healthBreakdown, setHealthBreakdown] = useState([]);
   const [domain, setDomain] = useState("Twin");
   const [error, setError] = useState(null);
 
@@ -48,19 +53,33 @@ export default function StationDetail({ station, onBack }) {
       .catch(() => {});
   }, [station.station_id]);
 
+  const refreshHealth = useCallback(() => {
+    getHealthCurrent(station.station_id).then(setHealth).catch(() => {});
+  }, [station.station_id]);
+
+  const refreshHealthBreakdown = useCallback(() => {
+    getHealthBreakdown(station.station_id).then(setHealthBreakdown).catch(() => {});
+  }, [station.station_id]);
+
   useEffect(() => {
     refreshLatest();
     refreshHistory();
     refreshAnomalies();
+    refreshHealth();
+    refreshHealthBreakdown();
     const t1 = setInterval(refreshLatest, 5000);
     const t2 = setInterval(refreshHistory, 30000);
     const t3 = setInterval(refreshAnomalies, 5000);
+    const t4 = setInterval(refreshHealth, 5000);
+    const t5 = setInterval(refreshHealthBreakdown, 30000);
     return () => {
       clearInterval(t1);
       clearInterval(t2);
       clearInterval(t3);
+      clearInterval(t4);
+      clearInterval(t5);
     };
-  }, [refreshLatest, refreshHistory, refreshAnomalies]);
+  }, [refreshLatest, refreshHistory, refreshAnomalies, refreshHealth, refreshHealthBreakdown]);
 
   if (error && !latest) {
     return (
@@ -247,13 +266,30 @@ export default function StationDetail({ station, onBack }) {
         />
       </div>
 
+      <HealthScore health={health} />
+      <HealthBreakdownChart data={healthBreakdown} />
+
+      <ControlPanel
+        stationId={station.station_id}
+        activeGenerator={latest.active_generator}
+        heaterSetpointC={latest.heater_setpoint_c}
+      />
+
       {latest.active_anomalies && latest.active_anomalies !== "none" && (
         <div className="station-detail__anomaly-banner">
           Active (ground truth): {latest.active_anomalies.split(",").join(", ")}
         </div>
       )}
 
-      <AnomalyBanner data={anomalies} />
+      <AnomalyBanner
+        data={anomalies}
+        stationId={station.station_id}
+        groundTruthKinds={
+          latest.active_anomalies && latest.active_anomalies !== "none"
+            ? latest.active_anomalies.split(",")
+            : []
+        }
+      />
 
       {domain === "Logistics" && latest.resupply_recommendation && (
         <div className="station-detail__recommendation">

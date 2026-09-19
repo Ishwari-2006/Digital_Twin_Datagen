@@ -45,3 +45,29 @@ CREATE INDEX IF NOT EXISTS idx_telemetry_station_ts ON telemetry (station_id, ts
 -- --- Optional: only if TimescaleDB extension is installed on this Postgres ---
 -- CREATE EXTENSION IF NOT EXISTS timescaledb;
 -- SELECT create_hypertable('telemetry', 'ts', if_not_exists => TRUE, migrate_data => TRUE);
+
+-- --------------------------------------------------------------------------
+-- Remote Management Action Layer
+-- --------------------------------------------------------------------------
+
+-- New fields StationSimulator.apply_command() adds to every record (see
+-- generator.py). ADD COLUMN IF NOT EXISTS keeps this file idempotent even
+-- if the `telemetry` table already exists from an earlier run.
+ALTER TABLE telemetry ADD COLUMN IF NOT EXISTS active_generator   TEXT;
+ALTER TABLE telemetry ADD COLUMN IF NOT EXISTS heater_setpoint_c  DOUBLE PRECISION;
+ALTER TABLE telemetry ADD COLUMN IF NOT EXISTS resupply_requested BOOLEAN;
+
+-- Audit log for operator commands issued via
+-- POST /stations/{station_id}/commands (api.py).
+CREATE TABLE IF NOT EXISTS commands (
+    id            BIGSERIAL PRIMARY KEY,
+    station_id    TEXT NOT NULL,
+    command_type  TEXT NOT NULL,
+    payload       JSONB NOT NULL,
+    issued_by     TEXT NOT NULL DEFAULT 'operator',
+    ts            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    status        TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending', 'applied', 'failed'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_commands_station_ts ON commands (station_id, ts DESC);

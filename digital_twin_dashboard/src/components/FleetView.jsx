@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { getStations, getLatest, getAnomalies } from "../api";
+import { getStations, getLatest, getAnomalies, getHealthCurrent } from "../api";
 import StationPanel from "./StationPanel";
 import "./FleetView.css";
 
@@ -7,6 +7,7 @@ export default function FleetView({ onOpen }) {
   const [stations, setStations] = useState([]);
   const [telemetryByStation, setTelemetryByStation] = useState({});
   const [anomaliesByStation, setAnomaliesByStation] = useState({});
+  const [healthByStation, setHealthByStation] = useState({});
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -34,6 +35,14 @@ export default function FleetView({ onOpen }) {
           map[r.station_id] = r;
         });
         setAnomaliesByStation(map);
+      })
+      .catch(() => {});
+
+    Promise.all(["maitri", "bharati"].map((stationId) => getHealthCurrent(stationId)))
+      .then((rows) => {
+        const map = {};
+        rows.forEach((row) => { map[row.station_id] = row; });
+        setHealthByStation(map);
       })
       .catch(() => {});
   }, []);
@@ -65,6 +74,7 @@ export default function FleetView({ onOpen }) {
           station={s}
           telemetry={telemetryByStation[s.station_id]}
           anomalies={anomaliesByStation[s.station_id]}
+          health={healthByStation[s.station_id]}
           onOpen={onOpen}
         />
       ))}

@@ -1,5 +1,6 @@
 import StatusPill from './StatusPill'
 import AnomalyBanner from './AnomalyBanner'
+import HealthScore from './HealthScore'
 import './StationPanel.css'
 
 function autonomyTone(days) {
@@ -9,7 +10,7 @@ function autonomyTone(days) {
   return 'good'
 }
 
-export default function StationPanel({ station, telemetry, anomalies, onOpen }) {
+export default function StationPanel({ station, telemetry, anomalies, health, onOpen }) {
   const hasData = Boolean(telemetry)
 
   return (
@@ -27,6 +28,8 @@ export default function StationPanel({ station, telemetry, anomalies, onOpen }) 
           />
         )}
       </div>
+
+      <HealthScore health={health} compact />
 
       {!hasData ? (
         <div className="station-panel__waiting">Waiting for data…</div>

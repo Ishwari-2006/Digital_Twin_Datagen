@@ -125,6 +125,14 @@ class StationSimulator:
 
         self._days_since_resupply = 0
 
+        # Remote Management Action Layer: operator-controllable state.
+        # Defaults reproduce this simulator's original hardcoded behavior
+        # exactly (5.0C heater threshold, full generator bank, no manual
+        # resupply flag) -- nothing changes until apply_command() is called.
+        self._active_generator: str = "primary"   # "primary" | "backup"
+        self._heater_setpoint_c: float = 5.0
+        self._resupply_requested: bool = False
+
     # ------------------------------------------------------------------- #
     # Public controls (used by the "simulate event" / "simulate blackout" demo
     # triggers described in Section 3.3 and 5.1 of the reference doc).
@@ -146,6 +154,52 @@ class StationSimulator:
 
     def is_blacked_out(self) -> bool:
         return "comms_blackout" in self._active
+
+    def apply_command(self, cmd: dict) -> dict:
+        """
+        Apply one operator command from the Remote Management Action Layer
+        (POST /stations/{station_id}/commands -> MQTT station/<id>/command ->
+        mqtt_publisher.py's command listener -> here). Mutates internal state;
+        the effect is reflected starting with the very next step() call.
+
+        Returns {"applied": bool, "detail": str}, used both for the console
+        log line in mqtt_publisher.py and to flip the command's audit-log
+        status ("applied" vs "failed") back in Postgres.
+        """
+        command = cmd.get("command")
+
+        if command == "switch_generator":
+            target = cmd.get("target", "backup")
+            if target not in ("primary", "backup"):
+                return {"applied": False, "detail": f"unknown generator target '{target}'"}
+            self._active_generator = target
+            return {"applied": True, "detail": f"active generator -> {target}"}
+
+        if command == "force_resupply_request":
+            self._resupply_requested = True
+            return {"applied": True, "detail": "resupply_requested -> True"}
+
+        if command == "adjust_heater_setpoint":
+            value = cmd.get("value")
+            if value is None:
+                return {"applied": False, "detail": "missing 'value'"}
+            self._heater_setpoint_c = float(value)
+            return {"applied": True, "detail": f"heater_setpoint_c -> {value}"}
+
+        if command == "acknowledge_anomaly":
+            # anomaly_id is one of ANOMALY_TYPES (e.g. "fuel_leak"), matching
+            # the keys of self._active -- the same ground-truth kind shown in
+            # the record's active_anomalies field. Reuses clear_anomaly() so
+            # there's exactly one code path that removes an active anomaly.
+            kind = cmd.get("anomaly_id")
+            was_active = kind in self._active
+            self.clear_anomaly(kind)
+            return {
+                "applied": was_active,
+                "detail": f"cleared '{kind}'" if was_active else f"'{kind}' was not active",
+            }
+
+        return {"applied": False, "detail": f"unknown command '{command}'"}
 
     # ------------------------------------------------------------------- #
     # Internals
@@ -229,7 +283,7 @@ class StationSimulator:
         cold_penalty = max(0.0, -env["ambient_temp_c"]) * 0.15
         load_kw += cold_penalty
 
-        heater_status = "on" if env["ambient_temp_c"] < 5.0 else "standby"
+        heater_status = "on" if env["ambient_temp_c"] < self._heater_setpoint_c else "standby"
         hvac_status = "on"
 
         spike = self._active.get("power_spike")
@@ -244,7 +298,12 @@ class StationSimulator:
             load_kw *= max(0.4, 1.0 - 0.3 * heater_fail.magnitude)
 
         load_kw = max(5.0, load_kw)
-        generator_capacity_kw = p.n_generators * p.generator_rated_kw
+        if self._active_generator == "backup":
+            # Running on the single backup unit instead of the full bank --
+            # switch_generator's visible effect: generator_load_pct jumps.
+            generator_capacity_kw = p.generator_rated_kw
+        else:
+            generator_capacity_kw = p.n_generators * p.generator_rated_kw
         generator_load_pct = min(100.0, 100.0 * load_kw / generator_capacity_kw)
 
         # Battery bank acts as a short-term load buffer, not primary storage --
@@ -293,6 +352,8 @@ class StationSimulator:
             "days_of_autonomy": round(min(days_of_autonomy, 999.0), 1),
             "hvac_status": hvac_status,
             "heater_status": heater_status,
+            "active_generator": self._active_generator,
+            "heater_setpoint_c": round(self._heater_setpoint_c, 1),
         }
 
     def _logistics(self, now: datetime, infra: dict, env: dict) -> dict:
@@ -314,9 +375,16 @@ class StationSimulator:
         else:
             recommendation = "Weather unfavorable — monitor before scheduling"
 
+        # force_resupply_request's visible effect: flagged on every record
+        # until an operator/ops process clears it, and folded into the
+        # recommendation text unless it's already at the URGENT level.
+        if self._resupply_requested and not recommendation.startswith("URGENT"):
+            recommendation = f"Manual resupply requested by operator — {recommendation}"
+
         return {
             "resupply_window_days_remaining": int(days_to_window),
             "resupply_recommendation": recommendation,
+            "resupply_requested": self._resupply_requested,
         }
 
     def _dt_hours(self, now: datetime) -> float:

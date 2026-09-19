@@ -1,0 +1,63 @@
+diff --git a/digital_twin_dashboard/src/components/StationTwin.jsx b/digital_twin_dashboard/src/components/StationTwin.jsx
+index a7bfaab..2426cb2 100644
+--- a/digital_twin_dashboard/src/components/StationTwin.jsx
++++ b/digital_twin_dashboard/src/components/StationTwin.jsx
+@@ -14,6 +14,13 @@ const ZONES = [
+     x: 22,
+     y: 26,
+     signals: ["power_draw_kw"],
++    // Remote Management Action Layer: generator_load_pct and active_generator
++    // are direct telemetry fields (not something the z-score detector scores),
++    // so switch_generator's effect needs its own threshold check here --
++    // same thresholds StationDetail.jsx already uses for the Energy tab tile.
++    loadField: "generator_load_pct",
++    loadWarnAt: 85,
++    loadCriticalAt: 95,
+   },
+   {
+     id: "fuel",
+@@ -84,6 +91,13 @@ function zoneSeverity(zone, latest, anomalyMap) {
+     if (flag.severity === "critical") return "critical";
+     if (flag.severity === "warn") worst = "warn";
+   }
++  if (zone.loadField) {
++    const load = latest?.[zone.loadField];
++    if (typeof load === "number") {
++      if (load >= zone.loadCriticalAt) return "critical";
++      if (load >= zone.loadWarnAt && worst === "normal") worst = "warn";
++    }
++  }
+   return worst;
+ }
+ 
+@@ -93,6 +107,8 @@ const UNITS = {
+   ambient_temp_c: "°C",
+   wind_speed_ms: " m/s",
+   battery_soc_pct: "%",
++  generator_load_pct: "%",
++  heater_setpoint_c: "°C",
+ };
+ 
+ function formatValue(sig, value) {
+@@ -116,12 +132,20 @@ function zoneMetrics(zone, latest) {
+     return [
+       { label: "Heater", value: latest?.heater_status },
+       { label: "HVAC", value: latest?.hvac_status },
++      { label: "Heater setpoint", value: formatValue("heater_setpoint_c", latest?.heater_setpoint_c) },
+     ];
+   }
+-  return zone.signals.map((sig) => ({
++  const base = zone.signals.map((sig) => ({
+     label: SIGNAL_LABELS[sig] || sig,
+     value: formatValue(sig, latest?.[sig]),
+   }));
++  if (zone.loadField) {
++    base.push(
++      { label: "Generator load", value: formatValue(zone.loadField, latest?.[zone.loadField]) },
++      { label: "Active generator", value: latest?.active_generator },
++    );
++  }
++  return base;
+ }
+ 
+ function findZonePoint(id) {

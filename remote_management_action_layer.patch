@@ -1,0 +1,907 @@
+diff --git a/api.py b/api.py
+index f92bd07..0c58ede 100644
+--- a/api.py
++++ b/api.py
+@@ -18,13 +18,17 @@ Then:
+ 
+ from __future__ import annotations
+ 
++import json
++import os
+ from typing import Optional
+ 
+ import pandas as pd
++import paho.mqtt.publish as mqtt_publish
+ from fastapi import FastAPI, HTTPException, Query
+ from fastapi.middleware.cors import CORSMiddleware
++from pydantic import BaseModel
+ 
+-from db.db import fetch_history, fetch_latest, fetch_stations
++from db.db import fetch_commands, fetch_history, fetch_latest, fetch_stations, insert_command
+ from detector import DEFAULT_MIN_PERIODS, DEFAULT_WINDOW, detect_current
+ from station_config import STATIONS
+ 
+@@ -44,6 +48,31 @@ app.add_middleware(
+ # the detector enough to work with.
+ ANOMALY_HISTORY_HOURS = 6.0
+ 
++# --------------------------------------------------------------------------- #
++# Remote Management Action Layer
++# --------------------------------------------------------------------------- #
++# mqtt_publisher.py and mqtt_subscriber.py take --broker-host/--broker-port
++# CLI flags (default localhost:1883); api.py runs under uvicorn instead, so
++# it reads the same defaults from the environment.
++MQTT_BROKER_HOST = os.environ.get("MQTT_BROKER_HOST", "localhost")
++MQTT_BROKER_PORT = int(os.environ.get("MQTT_BROKER_PORT", "1883"))
++
++# Must match the branches StationSimulator.apply_command() handles in generator.py.
++ALLOWED_COMMANDS = {
++    "switch_generator",
++    "force_resupply_request",
++    "adjust_heater_setpoint",
++    "acknowledge_anomaly",
++}
++
++
++class CommandIn(BaseModel):
++    command: str
++    target: Optional[str] = None       # switch_generator: "primary" | "backup"
++    value: Optional[float] = None      # adjust_heater_setpoint: new setpoint in °C
++    anomaly_id: Optional[str] = None   # acknowledge_anomaly: one of ANOMALY_TYPES, e.g. "fuel_leak"
++    issued_by: str = "operator"
++
+ 
+ @app.get("/health")
+ def health():
+@@ -110,4 +139,45 @@ def anomalies_latest(station: Optional[str] = Query(default=None)):
+         if station not in STATIONS:
+             raise HTTPException(status_code=404, detail=f"Unknown station '{station}'")
+         return _anomalies_for(station)
+-    return [_anomalies_for(key) for key in STATIONS]
+\ No newline at end of file
++    return [_anomalies_for(key) for key in STATIONS]
++
++
++@app.post("/stations/{station_id}/commands")
++def post_command(station_id: str, cmd: CommandIn):
++    """
++    Issue an operator command: validated here, logged to the `commands` audit
++    table as status='pending', then published to station/<id>/command over
++    MQTT. mqtt_publisher.py's command listener applies it to the live
++    StationSimulator and flips the audit row to 'applied' or 'failed'.
++    """
++    if station_id not in STATIONS:
++        raise HTTPException(status_code=404, detail=f"Unknown station '{station_id}'")
++    if cmd.command not in ALLOWED_COMMANDS:
++        raise HTTPException(status_code=400, detail=f"Unsupported command '{cmd.command}'")
++
++    payload = cmd.model_dump(exclude_none=True)
++    record = insert_command(station_id, cmd.command, payload, cmd.issued_by)
++
++    mqtt_payload = dict(payload)
++    mqtt_payload["command_id"] = record["id"]  # lets the publisher report back status
++
++    try:
++        mqtt_publish.single(
++            f"station/{station_id}/command",
++            payload=json.dumps(mqtt_payload),
++            hostname=MQTT_BROKER_HOST,
++            port=MQTT_BROKER_PORT,
++            qos=1,
++        )
++    except Exception as exc:
++        raise HTTPException(status_code=502, detail=f"Could not reach MQTT broker: {exc}")
++
++    return record
++
++
++@app.get("/stations/{station_id}/commands")
++def get_commands(station_id: str, limit: int = Query(default=50, gt=0, le=200)):
++    """Recent command history for a station -- the dashboard's audit log."""
++    if station_id not in STATIONS:
++        raise HTTPException(status_code=404, detail=f"Unknown station '{station_id}'")
++    return fetch_commands(station_id, limit=limit)
+\ No newline at end of file
+diff --git a/db/db.py b/db/db.py
+index 6232511..ba6fc02 100644
+--- a/db/db.py
++++ b/db/db.py
+@@ -9,6 +9,7 @@ Configure via environment variables (see .env.example):
+ 
+ from __future__ import annotations
+ 
++import json
+ import os
+ from contextlib import contextmanager
+ from typing import Iterator, Optional
+@@ -35,6 +36,8 @@ _COLUMNS = [
+     "hvac_status", "heater_status",
+     "resupply_window_days_remaining", "resupply_recommendation",
+     "active_anomalies", "delivered_live",
++    # Remote Management Action Layer -- surfaced by StationSimulator.apply_command()
++    "active_generator", "heater_setpoint_c", "resupply_requested",
+ ]
+ 
+ _INSERT_SQL = f"""
+@@ -133,4 +136,50 @@ def fetch_stations() -> list[str]:
+     with get_conn() as conn:
+         with conn.cursor() as cur:
+             cur.execute("SELECT DISTINCT station_id FROM telemetry ORDER BY station_id")
+-            return [r[0] for r in cur.fetchall()]
+\ No newline at end of file
++            return [r[0] for r in cur.fetchall()]
++
++
++# --------------------------------------------------------------------------- #
++# Remote Management Action Layer -- operator command audit log
++# --------------------------------------------------------------------------- #
++
++def insert_command(station_id: str, command_type: str, payload: dict, issued_by: str) -> dict:
++    """Insert one operator command as a 'pending' audit row (api.py calls this
++    right before publishing the command to MQTT). Returns the new row."""
++    with get_conn() as conn:
++        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
++            cur.execute(
++                """
++                INSERT INTO commands (station_id, command_type, payload, issued_by)
++                VALUES (%s, %s, %s::jsonb, %s)
++                RETURNING id, station_id, command_type, payload, issued_by, ts, status
++                """,
++                (station_id, command_type, json.dumps(payload), issued_by),
++            )
++            return dict(cur.fetchone())
++
++
++def update_command_status(command_id: int, status: str) -> None:
++    """Flip a command's audit status once the simulator has actually applied
++    it (mqtt_publisher.py's command listener calls this after apply_command())."""
++    with get_conn() as conn:
++        with conn.cursor() as cur:
++            cur.execute("UPDATE commands SET status = %s WHERE id = %s", (status, command_id))
++
++
++def fetch_commands(station_id: str, limit: int = 50) -> list[dict]:
++    """Most recent commands for a station, newest first -- the dashboard's
++    'Recent Actions' audit-log feed."""
++    with get_conn() as conn:
++        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
++            cur.execute(
++                """
++                SELECT id, station_id, command_type, payload, issued_by, ts, status
++                FROM commands
++                WHERE station_id = %s
++                ORDER BY ts DESC
++                LIMIT %s
++                """,
++                (station_id, limit),
++            )
++            return [dict(r) for r in cur.fetchall()]
+\ No newline at end of file
+diff --git a/db/schema.sql b/db/schema.sql
+index 40173a3..136abe6 100644
+--- a/db/schema.sql
++++ b/db/schema.sql
+@@ -44,4 +44,30 @@ CREATE INDEX IF NOT EXISTS idx_telemetry_station_ts ON telemetry (station_id, ts
+ 
+ -- --- Optional: only if TimescaleDB extension is installed on this Postgres ---
+ -- CREATE EXTENSION IF NOT EXISTS timescaledb;
+--- SELECT create_hypertable('telemetry', 'ts', if_not_exists => TRUE, migrate_data => TRUE);
+\ No newline at end of file
++-- SELECT create_hypertable('telemetry', 'ts', if_not_exists => TRUE, migrate_data => TRUE);
++
++-- --------------------------------------------------------------------------
++-- Remote Management Action Layer
++-- --------------------------------------------------------------------------
++
++-- New fields StationSimulator.apply_command() adds to every record (see
++-- generator.py). ADD COLUMN IF NOT EXISTS keeps this file idempotent even
++-- if the `telemetry` table already exists from an earlier run.
++ALTER TABLE telemetry ADD COLUMN IF NOT EXISTS active_generator   TEXT;
++ALTER TABLE telemetry ADD COLUMN IF NOT EXISTS heater_setpoint_c  DOUBLE PRECISION;
++ALTER TABLE telemetry ADD COLUMN IF NOT EXISTS resupply_requested BOOLEAN;
++
++-- Audit log for operator commands issued via
++-- POST /stations/{station_id}/commands (api.py).
++CREATE TABLE IF NOT EXISTS commands (
++    id            BIGSERIAL PRIMARY KEY,
++    station_id    TEXT NOT NULL,
++    command_type  TEXT NOT NULL,
++    payload       JSONB NOT NULL,
++    issued_by     TEXT NOT NULL DEFAULT 'operator',
++    ts            TIMESTAMPTZ NOT NULL DEFAULT now(),
++    status        TEXT NOT NULL DEFAULT 'pending'
++                      CHECK (status IN ('pending', 'applied', 'failed'))
++);
++
++CREATE INDEX IF NOT EXISTS idx_commands_station_ts ON commands (station_id, ts DESC);
+\ No newline at end of file
+diff --git a/digital_twin_dashboard/src/api.js b/digital_twin_dashboard/src/api.js
+index 4a8c73c..d8608d1 100644
+--- a/digital_twin_dashboard/src/api.js
++++ b/digital_twin_dashboard/src/api.js
+@@ -1,7 +1,7 @@
+ const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+ 
+-async function request(path) {
+-  const res = await fetch(`${BASE_URL}${path}`)
++async function request(path, options) {
++  const res = await fetch(`${BASE_URL}${path}`, options)
+   if (!res.ok) {
+     const body = await res.text().catch(() => '')
+     throw new Error(`${res.status} ${res.statusText}: ${body}`)
+@@ -25,4 +25,18 @@ export function getHistory(stationId, hours = 6) {
+ export function getAnomalies(stationId) {
+   const qs = stationId ? `?station=${encodeURIComponent(stationId)}` : ''
+   return request(`/anomalies/latest${qs}`)
++}
++
++// --- Remote Management Action Layer -----------------------------------
++
++export function postCommand(stationId, command) {
++  return request(`/stations/${encodeURIComponent(stationId)}/commands`, {
++    method: 'POST',
++    headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify(command),
++  })
++}
++
++export function getCommands(stationId, limit = 20) {
++  return request(`/stations/${encodeURIComponent(stationId)}/commands?limit=${limit}`)
+ }
+\ No newline at end of file
+diff --git a/digital_twin_dashboard/src/components/AnomalyBanner.css b/digital_twin_dashboard/src/components/AnomalyBanner.css
+index 2fa3735..0fa6310 100644
+--- a/digital_twin_dashboard/src/components/AnomalyBanner.css
++++ b/digital_twin_dashboard/src/components/AnomalyBanner.css
+@@ -62,4 +62,31 @@
+ .anomaly-banner__detail {
+   color: var(--text-muted);
+   font-size: 12px;
++}
++
++/* Remote Management Action Layer -- acknowledge button on ground-truth rows */
++.anomaly-banner__ack {
++  margin-top: 8px;
++}
++
++.anomaly-banner__ack-button {
++  background: none;
++  border: 1px solid rgba(240, 185, 74, 0.4);
++  color: var(--amber);
++  border-radius: 5px;
++  padding: 3px 10px;
++  font-size: 12px;
++}
++.anomaly-banner__ack-button:hover:not(:disabled) {
++  background: rgba(240, 185, 74, 0.12);
++}
++.anomaly-banner__ack-button:disabled {
++  opacity: 0.6;
++  cursor: not-allowed;
++}
++
++.anomaly-banner__ack-error {
++  color: var(--flare);
++  font-size: 12px;
++  margin-top: 6px;
+ }
+\ No newline at end of file
+diff --git a/digital_twin_dashboard/src/components/AnomalyBanner.jsx b/digital_twin_dashboard/src/components/AnomalyBanner.jsx
+index 93540e0..b33d499 100644
+--- a/digital_twin_dashboard/src/components/AnomalyBanner.jsx
++++ b/digital_twin_dashboard/src/components/AnomalyBanner.jsx
+@@ -1,3 +1,5 @@
++import { useState } from 'react'
++import { postCommand } from '../api'
+ import './AnomalyBanner.css'
+ 
+ /**
+@@ -5,19 +7,67 @@ import './AnomalyBanner.css'
+  * live output, not the generator's ground-truth active_anomalies field.
+  * `compact` renders a single worst-signal line for the fleet cards; the
+  * full station detail view shows every flagged signal.
++ *
++ * `groundTruthKinds` (Remote Management Action Layer) is the station's
++ * *actual* active anomaly kinds -- StationSimulator's active_anomalies
++ * field, split on ",". These are the only anomalies that can genuinely be
++ * "acknowledged" (StationSimulator.apply_command's acknowledge_anomaly
++ * calls clear_anomaly(kind) on exactly these kind strings). The detector's
++ * `data.anomalies` signals above are statistical flags recomputed every
++ * poll, not something a single command can clear, so they get no button.
++ * Both `groundTruthKinds` and `stationId` are optional -- StationPanel's
++ * compact fleet-card usage doesn't pass them, so nothing changes there.
+  */
+-export default function AnomalyBanner({ data, compact = false }) {
+-  if (!data) return null
++export default function AnomalyBanner({ data, compact = false, stationId, groundTruthKinds = [] }) {
++  const [ackBusy, setAckBusy] = useState(null)
++  const [ackError, setAckError] = useState(null)
++
++  const acknowledge = async (kind) => {
++    setAckBusy(kind)
++    setAckError(null)
++    try {
++      await postCommand(stationId, { command: 'acknowledge_anomaly', anomaly_id: kind })
++    } catch (e) {
++      setAckError(e.message)
++    } finally {
++      setAckBusy(null)
++    }
++  }
++
++  const ackSection = !compact && stationId && groundTruthKinds.length > 0 && (
++    <div className="anomaly-banner anomaly-banner--full anomaly-banner__ack">
++      <div className="anomaly-banner__title">Active (ground truth) — acknowledge to clear</div>
++      {groundTruthKinds.map((kind) => (
++        <div key={kind} className="anomaly-banner__row anomaly-banner__row--warn">
++          <span className="anomaly-banner__dot" />
++          <span className="anomaly-banner__label">{kind.replaceAll('_', ' ')}</span>
++          <button
++            className="anomaly-banner__ack-button"
++            disabled={ackBusy === kind}
++            onClick={() => acknowledge(kind)}
++          >
++            {ackBusy === kind ? 'Acknowledging…' : 'Acknowledge'}
++          </button>
++        </div>
++      ))}
++      {ackError && <div className="anomaly-banner__ack-error">{ackError}</div>}
++    </div>
++  )
++
++  if (!data) return ackSection || null
+ 
+   if (!data.ready) {
+     return (
+-      <div className="anomaly-banner anomaly-banner--pending">
+-        Building detection baseline… ({data.history_points} readings so far)
+-      </div>
++      <>
++        <div className="anomaly-banner anomaly-banner--pending">
++          Building detection baseline… ({data.history_points} readings so far)
++        </div>
++        {ackSection}
++      </>
+     )
+   }
+ 
+-  if (!data.anomalies.length) return null
++  if (!data.anomalies.length) return ackSection || null
+ 
+   if (compact) {
+     const worst = data.anomalies[0]
+@@ -29,15 +79,18 @@ export default function AnomalyBanner({ data, compact = false }) {
+   }
+ 
+   return (
+-    <div className="anomaly-banner anomaly-banner--full">
+-      <div className="anomaly-banner__title">Detected anomalies</div>
+-      {data.anomalies.map((a) => (
+-        <div key={a.signal} className={`anomaly-banner__row anomaly-banner__row--${a.severity}`}>
+-          <span className="anomaly-banner__dot" />
+-          <span className="anomaly-banner__label">{a.label}</span>
+-          <span className="anomaly-banner__detail num">{a.value} · z={a.z_score}</span>
+-        </div>
+-      ))}
+-    </div>
++    <>
++      <div className="anomaly-banner anomaly-banner--full">
++        <div className="anomaly-banner__title">Detected anomalies</div>
++        {data.anomalies.map((a) => (
++          <div key={a.signal} className={`anomaly-banner__row anomaly-banner__row--${a.severity}`}>
++            <span className="anomaly-banner__dot" />
++            <span className="anomaly-banner__label">{a.label}</span>
++            <span className="anomaly-banner__detail num">{a.value} · z={a.z_score}</span>
++          </div>
++        ))}
++      </div>
++      {ackSection}
++    </>
+   )
+ }
+\ No newline at end of file
+diff --git a/digital_twin_dashboard/src/components/ControlPanel.css b/digital_twin_dashboard/src/components/ControlPanel.css
+new file mode 100644
+index 0000000..7fef489
+--- /dev/null
++++ b/digital_twin_dashboard/src/components/ControlPanel.css
+@@ -0,0 +1,126 @@
++.control-panel {
++  background: var(--panel);
++  border: 1px solid var(--border-soft);
++  border-radius: 8px;
++  padding: 16px 18px;
++  margin: 18px 0;
++}
++
++.control-panel__header {
++  display: flex;
++  justify-content: space-between;
++  align-items: center;
++  margin-bottom: 12px;
++}
++
++.control-panel__title {
++  font-family: var(--font-display);
++  font-weight: 600;
++  font-size: 16px;
++  margin: 0;
++  color: var(--text);
++}
++
++.control-panel__toast {
++  font-size: 12px;
++  padding: 3px 10px;
++  border-radius: 5px;
++}
++.control-panel__toast.is-ok {
++  color: var(--aurora);
++  background: rgba(109, 230, 176, 0.1);
++  border: 1px solid rgba(109, 230, 176, 0.3);
++}
++.control-panel__toast.is-error {
++  color: var(--flare);
++  background: rgba(255, 122, 92, 0.1);
++  border: 1px solid rgba(255, 122, 92, 0.3);
++}
++
++.control-panel__actions {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 10px;
++  margin-bottom: 16px;
++}
++
++.control-panel__button {
++  background: var(--panel-elevated);
++  color: var(--text);
++  border: 1px solid var(--border);
++  border-radius: 6px;
++  padding: 8px 14px;
++  font-size: 13px;
++}
++.control-panel__button:hover:not(:disabled) {
++  border-color: var(--ice);
++  color: var(--ice);
++}
++.control-panel__button:disabled {
++  opacity: 0.5;
++  cursor: not-allowed;
++}
++
++.control-panel__current {
++  color: var(--text-faint);
++  font-size: 11.5px;
++}
++
++.control-panel__heater {
++  display: flex;
++  gap: 8px;
++  align-items: center;
++}
++.control-panel__heater input {
++  width: 68px;
++  background: var(--bg-raised);
++  border: 1px solid var(--border);
++  color: var(--text);
++  border-radius: 6px;
++  padding: 7px 8px;
++  font-size: 13px;
++  font-variant-numeric: tabular-nums;
++}
++
++.control-panel__history h4 {
++  margin: 0 0 6px 0;
++  font-size: 12.5px;
++  color: var(--text-muted);
++  text-transform: uppercase;
++  letter-spacing: 0.03em;
++}
++
++.control-panel__empty {
++  font-size: 13px;
++  color: var(--text-faint);
++}
++
++.control-panel__history ul {
++  list-style: none;
++  margin: 0;
++  padding: 0;
++  max-height: 170px;
++  overflow-y: auto;
++}
++
++.control-panel__history-row {
++  display: grid;
++  grid-template-columns: 90px 1fr 100px 80px;
++  gap: 8px;
++  font-size: 12.5px;
++  padding: 5px 0;
++  border-bottom: 1px solid var(--border-soft);
++  color: var(--text-muted);
++}
++
++.control-panel__history-command {
++  color: var(--text);
++  text-transform: capitalize;
++}
++
++.control-panel__history-status {
++  text-transform: capitalize;
++}
++.control-panel__history-row--applied .control-panel__history-status { color: var(--aurora); }
++.control-panel__history-row--pending .control-panel__history-status { color: var(--amber); }
++.control-panel__history-row--failed .control-panel__history-status { color: var(--flare); }
+diff --git a/digital_twin_dashboard/src/components/ControlPanel.jsx b/digital_twin_dashboard/src/components/ControlPanel.jsx
+new file mode 100644
+index 0000000..deea44a
+--- /dev/null
++++ b/digital_twin_dashboard/src/components/ControlPanel.jsx
+@@ -0,0 +1,143 @@
++import { useState, useEffect, useCallback } from "react";
++import { postCommand, getCommands } from "../api";
++import "./ControlPanel.css";
++
++function formatTime(ts) {
++  try {
++    return new Date(ts).toLocaleTimeString();
++  } catch {
++    return ts;
++  }
++}
++
++/**
++ * Remote Management Action Layer control surface for one station.
++ * `stationId` must be a key from station_config.STATIONS ("maitri" | "bharati") --
++ * the same value StationDetail.jsx already carries as station.station_id.
++ * `activeGenerator` is the live telemetry field of the same name (added by
++ * StationSimulator.apply_command()) so the button always offers the *other*
++ * generator instead of blindly re-sending "backup".
++ */
++export default function ControlPanel({ stationId, activeGenerator, heaterSetpointC }) {
++  const [heaterValue, setHeaterValue] = useState(heaterSetpointC ?? 18.5);
++  const [busy, setBusy] = useState(false);
++  const [toast, setToast] = useState(null);
++  const [history, setHistory] = useState([]);
++  const [seeded, setSeeded] = useState(heaterSetpointC != null);
++
++  // Seed the input from the station's real current setpoint the first time
++  // it arrives, without overwriting whatever the operator is mid-typing.
++  useEffect(() => {
++    if (!seeded && heaterSetpointC != null) {
++      setHeaterValue(heaterSetpointC);
++      setSeeded(true);
++    }
++  }, [seeded, heaterSetpointC]);
++
++  const loadHistory = useCallback(() => {
++    getCommands(stationId, 20)
++      .then(setHistory)
++      .catch((e) => console.error(e));
++  }, [stationId]);
++
++  useEffect(() => {
++    loadHistory();
++    const id = setInterval(loadHistory, 5000);
++    return () => clearInterval(id);
++  }, [loadHistory]);
++
++  const showToast = (message, ok = true) => {
++    setToast({ message, ok });
++    setTimeout(() => setToast(null), 3000);
++  };
++
++  const send = async (command) => {
++    setBusy(true);
++    try {
++      await postCommand(stationId, command);
++      showToast(`Sent: ${command.command}`);
++      loadHistory();
++    } catch (err) {
++      showToast(err.message, false);
++    } finally {
++      setBusy(false);
++    }
++  };
++
++  const otherGenerator = activeGenerator === "backup" ? "primary" : "backup";
++
++  return (
++    <div className="control-panel">
++      <div className="control-panel__header">
++        <h3 className="control-panel__title">Station Control</h3>
++        {toast && (
++          <span className={`control-panel__toast ${toast.ok ? "is-ok" : "is-error"}`}>
++            {toast.message}
++          </span>
++        )}
++      </div>
++
++      <div className="control-panel__actions">
++        <button
++          className="control-panel__button"
++          disabled={busy}
++          onClick={() => send({ command: "switch_generator", target: otherGenerator })}
++        >
++          Switch to {otherGenerator} generator
++          {activeGenerator && (
++            <span className="control-panel__current"> (current: {activeGenerator})</span>
++          )}
++        </button>
++
++        <button
++          className="control-panel__button"
++          disabled={busy}
++          onClick={() => send({ command: "force_resupply_request" })}
++        >
++          Force resupply request
++        </button>
++
++        <div className="control-panel__heater">
++          <input
++            type="number"
++            step="0.5"
++            value={heaterValue}
++            onChange={(e) => setHeaterValue(e.target.value)}
++          />
++          <button
++            className="control-panel__button"
++            disabled={busy}
++            onClick={() =>
++              send({
++                command: "adjust_heater_setpoint",
++                value: parseFloat(heaterValue),
++              })
++            }
++          >
++            Set heater setpoint (°C)
++          </button>
++        </div>
++      </div>
++
++      <div className="control-panel__history">
++        <h4>Recent Actions</h4>
++        {history.length === 0 && (
++          <p className="control-panel__empty">No commands issued yet.</p>
++        )}
++        <ul>
++          {history.map((row) => (
++            <li
++              key={row.id}
++              className={`control-panel__history-row control-panel__history-row--${row.status}`}
++            >
++              <span className="control-panel__history-time num">{formatTime(row.ts)}</span>
++              <span className="control-panel__history-command">{row.command_type}</span>
++              <span className="control-panel__history-issuer">{row.issued_by}</span>
++              <span className="control-panel__history-status">{row.status}</span>
++            </li>
++          ))}
++        </ul>
++      </div>
++    </div>
++  );
++}
+diff --git a/digital_twin_dashboard/src/components/StationDetail.jsx b/digital_twin_dashboard/src/components/StationDetail.jsx
+index 0149e48..46140b6 100644
+--- a/digital_twin_dashboard/src/components/StationDetail.jsx
++++ b/digital_twin_dashboard/src/components/StationDetail.jsx
+@@ -4,6 +4,7 @@ import StatusPill from "./StatusPill";
+ import DomainSection from "./DomainSection";
+ import AnomalyBanner from "./AnomalyBanner";
+ import StationTwin from "./StationTwin";
++import ControlPanel from "./ControlPanel";
+ import "./StationDetail.css";
+ 
+ const DOMAINS = [
+@@ -247,13 +248,27 @@ export default function StationDetail({ station, onBack }) {
+         />
+       </div>
+ 
++      <ControlPanel
++        stationId={station.station_id}
++        activeGenerator={latest.active_generator}
++        heaterSetpointC={latest.heater_setpoint_c}
++      />
++
+       {latest.active_anomalies && latest.active_anomalies !== "none" && (
+         <div className="station-detail__anomaly-banner">
+           Active (ground truth): {latest.active_anomalies.split(",").join(", ")}
+         </div>
+       )}
+ 
+-      <AnomalyBanner data={anomalies} />
++      <AnomalyBanner
++        data={anomalies}
++        stationId={station.station_id}
++        groundTruthKinds={
++          latest.active_anomalies && latest.active_anomalies !== "none"
++            ? latest.active_anomalies.split(",")
++            : []
++        }
++      />
+ 
+       {domain === "Logistics" && latest.resupply_recommendation && (
+         <div className="station-detail__recommendation">
+diff --git a/generator.py b/generator.py
+index 52ab13a..db1e8d0 100644
+--- a/generator.py
++++ b/generator.py
+@@ -125,6 +125,14 @@ class StationSimulator:
+ 
+         self._days_since_resupply = 0
+ 
++        # Remote Management Action Layer: operator-controllable state.
++        # Defaults reproduce this simulator's original hardcoded behavior
++        # exactly (5.0C heater threshold, full generator bank, no manual
++        # resupply flag) -- nothing changes until apply_command() is called.
++        self._active_generator: str = "primary"   # "primary" | "backup"
++        self._heater_setpoint_c: float = 5.0
++        self._resupply_requested: bool = False
++
+     # ------------------------------------------------------------------- #
+     # Public controls (used by the "simulate event" / "simulate blackout" demo
+     # triggers described in Section 3.3 and 5.1 of the reference doc).
+@@ -147,6 +155,52 @@ class StationSimulator:
+     def is_blacked_out(self) -> bool:
+         return "comms_blackout" in self._active
+ 
++    def apply_command(self, cmd: dict) -> dict:
++        """
++        Apply one operator command from the Remote Management Action Layer
++        (POST /stations/{station_id}/commands -> MQTT station/<id>/command ->
++        mqtt_publisher.py's command listener -> here). Mutates internal state;
++        the effect is reflected starting with the very next step() call.
++
++        Returns {"applied": bool, "detail": str}, used both for the console
++        log line in mqtt_publisher.py and to flip the command's audit-log
++        status ("applied" vs "failed") back in Postgres.
++        """
++        command = cmd.get("command")
++
++        if command == "switch_generator":
++            target = cmd.get("target", "backup")
++            if target not in ("primary", "backup"):
++                return {"applied": False, "detail": f"unknown generator target '{target}'"}
++            self._active_generator = target
++            return {"applied": True, "detail": f"active generator -> {target}"}
++
++        if command == "force_resupply_request":
++            self._resupply_requested = True
++            return {"applied": True, "detail": "resupply_requested -> True"}
++
++        if command == "adjust_heater_setpoint":
++            value = cmd.get("value")
++            if value is None:
++                return {"applied": False, "detail": "missing 'value'"}
++            self._heater_setpoint_c = float(value)
++            return {"applied": True, "detail": f"heater_setpoint_c -> {value}"}
++
++        if command == "acknowledge_anomaly":
++            # anomaly_id is one of ANOMALY_TYPES (e.g. "fuel_leak"), matching
++            # the keys of self._active -- the same ground-truth kind shown in
++            # the record's active_anomalies field. Reuses clear_anomaly() so
++            # there's exactly one code path that removes an active anomaly.
++            kind = cmd.get("anomaly_id")
++            was_active = kind in self._active
++            self.clear_anomaly(kind)
++            return {
++                "applied": was_active,
++                "detail": f"cleared '{kind}'" if was_active else f"'{kind}' was not active",
++            }
++
++        return {"applied": False, "detail": f"unknown command '{command}'"}
++
+     # ------------------------------------------------------------------- #
+     # Internals
+     # ------------------------------------------------------------------- #
+@@ -229,7 +283,7 @@ class StationSimulator:
+         cold_penalty = max(0.0, -env["ambient_temp_c"]) * 0.15
+         load_kw += cold_penalty
+ 
+-        heater_status = "on" if env["ambient_temp_c"] < 5.0 else "standby"
++        heater_status = "on" if env["ambient_temp_c"] < self._heater_setpoint_c else "standby"
+         hvac_status = "on"
+ 
+         spike = self._active.get("power_spike")
+@@ -244,7 +298,12 @@ class StationSimulator:
+             load_kw *= max(0.4, 1.0 - 0.3 * heater_fail.magnitude)
+ 
+         load_kw = max(5.0, load_kw)
+-        generator_capacity_kw = p.n_generators * p.generator_rated_kw
++        if self._active_generator == "backup":
++            # Running on the single backup unit instead of the full bank --
++            # switch_generator's visible effect: generator_load_pct jumps.
++            generator_capacity_kw = p.generator_rated_kw
++        else:
++            generator_capacity_kw = p.n_generators * p.generator_rated_kw
+         generator_load_pct = min(100.0, 100.0 * load_kw / generator_capacity_kw)
+ 
+         # Battery bank acts as a short-term load buffer, not primary storage --
+@@ -293,6 +352,8 @@ class StationSimulator:
+             "days_of_autonomy": round(min(days_of_autonomy, 999.0), 1),
+             "hvac_status": hvac_status,
+             "heater_status": heater_status,
++            "active_generator": self._active_generator,
++            "heater_setpoint_c": round(self._heater_setpoint_c, 1),
+         }
+ 
+     def _logistics(self, now: datetime, infra: dict, env: dict) -> dict:
+@@ -314,9 +375,16 @@ class StationSimulator:
+         else:
+             recommendation = "Weather unfavorable — monitor before scheduling"
+ 
++        # force_resupply_request's visible effect: flagged on every record
++        # until an operator/ops process clears it, and folded into the
++        # recommendation text unless it's already at the URGENT level.
++        if self._resupply_requested and not recommendation.startswith("URGENT"):
++            recommendation = f"Manual resupply requested by operator — {recommendation}"
++
+         return {
+             "resupply_window_days_remaining": int(days_to_window),
+             "resupply_recommendation": recommendation,
++            "resupply_requested": self._resupply_requested,
+         }
+ 
+     def _dt_hours(self, now: datetime) -> float:
+diff --git a/mqtt_publisher.py b/mqtt_publisher.py
+index d025c8f..091287f 100644
+--- a/mqtt_publisher.py
++++ b/mqtt_publisher.py
+@@ -27,10 +27,43 @@ from datetime import datetime, timedelta
+ 
+ import paho.mqtt.client as mqtt
+ 
++from db.db import update_command_status
+ from generator import ANOMALY_TYPES, StationSimulator
+ from station_config import STATIONS
+ 
+ TOPIC_TEMPLATE = "station/{station_id}/telemetry"
++COMMAND_TOPIC_FILTER = "station/+/command"
++
++
++def on_command_message(client, userdata, msg):
++    """
++    Remote Management Action Layer: the publisher owns the live
++    StationSimulator instances, so it's the process that actually applies
++    operator commands. `userdata` is the {station_id: StationSimulator} dict
++    set via client.user_data_set() in main().
++    """
++    sims = userdata
++    try:
++        station_id = msg.topic.split("/")[1]
++        cmd = json.loads(msg.payload.decode("utf-8"))
++    except (IndexError, json.JSONDecodeError) as exc:
++        print(f"# BAD COMMAND on {msg.topic}: {exc}", file=sys.stderr)
++        return
++
++    sim = sims.get(station_id)
++    if sim is None:
++        print(f"# command for unknown station '{station_id}'", file=sys.stderr)
++        return
++
++    result = sim.apply_command(cmd)
++    print(f"# COMMAND {station_id} <- {cmd.get('command')}: {result}", file=sys.stderr)
++
++    command_id = cmd.get("command_id")
++    if command_id is not None:
++        try:
++            update_command_status(command_id, "applied" if result.get("applied") else "failed")
++        except Exception as exc:
++            print(f"# failed to update audit row {command_id}: {exc}", file=sys.stderr)
+ 
+ 
+ def parse_trigger(spec: str) -> tuple[float, str, str]:
+@@ -64,6 +97,13 @@ def main() -> None:
+     sims = {key: StationSimulator(key, rng_seed=args.seed) for key in STATIONS}
+     was_blacked_out = {key: False for key in STATIONS}
+ 
++    # Remote Management Action Layer: listen for operator commands alongside
++    # the publish loop. client.loop_start() (above) already runs a background
++    # network thread, so subscribing here is enough -- no extra polling needed.
++    client.user_data_set(sims)
++    client.message_callback_add(COMMAND_TOPIC_FILTER, on_command_message)
++    client.subscribe(COMMAND_TOPIC_FILTER, qos=1)
++
+     pending_triggers = sorted(args.demo_trigger)
+     t0 = time.monotonic()
+     tick_wall_seconds = (args.interval * 60.0) / max(args.speed, 1e-6)

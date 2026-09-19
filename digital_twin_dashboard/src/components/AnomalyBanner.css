@@ -63,3 +63,30 @@
   color: var(--text-muted);
   font-size: 12px;
 }
+
+/* Remote Management Action Layer -- acknowledge button on ground-truth rows */
+.anomaly-banner__ack {
+  margin-top: 8px;
+}
+
+.anomaly-banner__ack-button {
+  background: none;
+  border: 1px solid rgba(240, 185, 74, 0.4);
+  color: var(--amber);
+  border-radius: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.anomaly-banner__ack-button:hover:not(:disabled) {
+  background: rgba(240, 185, 74, 0.12);
+}
+.anomaly-banner__ack-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.anomaly-banner__ack-error {
+  color: var(--flare);
+  font-size: 12px;
+  margin-top: 6px;
+}
